@@ -69,3 +69,4 @@ Using his Sound Effect configuration I was able to come up with the logic for th
 ## 🔧 What next:
 
 Trying to light up the Warm white / Cold white leds instead of using the RGB part of the strip. Just estatic change. Should be a small change. 
+Smoothen out a few quirks. 
