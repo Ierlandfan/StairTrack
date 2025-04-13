@@ -1,0 +1,21 @@
+# Insert below part in your configuration.yaml in home assistant.
+# If your sensor has a different name change that. (Here it is sensor.ld2411_distance)
+
+  - platform: template
+    sensors:
+      stair_step:
+        friendly_name: "Current Stair Step"
+        unit_of_measurement: "step"
+        value_template: >
+          {% set step_distance = 30 %}
+          {% set distance = states('sensor.ld2411_distance') | float %}
+          {% set step = (distance / step_distance) | int %}
+
+
+          {% if step < 0 %}
+            0
+          {% elif step > 15 %}
+            15
+          {% else %}
+            {{ step }}
+          {% endif %}
