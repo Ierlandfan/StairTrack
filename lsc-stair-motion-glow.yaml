@@ -1,0 +1,772 @@
+esphome:
+  name: lsc-32036322-l
+  friendly_name: Lsc 3203632-1
+
+bk72xx:
+  board: generic-bk7231n-qfn32-tuya
+
+# Wi-Fi configuration
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+api:
+  encryption:
+    key: ""
+ota:
+  - platform: esphome
+    password: ""
+
+# Enable logging
+logger:
+  logs:
+    sensor: INFO 
+
+# Global variables
+globals:
+  - id: active_effect
+    type: int
+    restore_value: yes
+    initial_value: '0'
+  - id: current_step
+    type: int
+    initial_value: '-1'
+  - id: previous_distance
+    type: float
+    initial_value: '0.0'
+  - id: motion_direction
+    type: int
+    initial_value: '1'  # 1 = up, -1 = down
+  - id: idle_counter
+    type: int
+    initial_value: '0'
+
+# Constants
+number:
+  - platform: template
+    name: "Step Distance (cm)"
+    id: step_distance
+    initial_value: 30.0
+    min_value: 10
+    max_value: 50
+    step: 1
+    optimistic: true  
+
+  - platform: template
+    name: "Number of Steps"
+    id: num_steps
+    initial_value: 15
+    min_value: 1
+    max_value: 30
+    step: 1
+    optimistic: true  
+
+sensor:
+  - platform: homeassistant
+    id: stair_step
+    entity_id: sensor.stair_step  # This is the sensor you need to define in Home Assistant
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            int step = x;  // Get the current step from the Home Assistant sensor value
+            id(current_step) = step;  // Set the current_step variable in ESPHome
+            ESP_LOGI("stair_effect", "Updated current step from HA: %d", step);  // Debug log
+
+
+output:
+  - platform: template
+    id: output_component1
+    type: float
+    power_supply: powersupply
+    zero_means_zero: True
+    write_action:
+      lambda: |-
+        auto call = id(cw_ww_partition).turn_on();
+        call.set_red(state);
+        call.set_transition_length(100);
+        call.perform();
+  - platform: template
+    id: output_component2
+    type: float
+    power_supply: powersupply
+    zero_means_zero: True
+    write_action:
+      lambda: |-
+        auto call = id(cw_ww_partition).turn_on();
+        call.set_blue(state);
+        call.set_transition_length(100);
+        call.perform();
+power_supply:
+  - id: powersupply
+    pin: 8
+light:
+  - platform: cwww
+    id: cw_ww
+    name: "CWWW"
+    cold_white: output_component2
+    warm_white: output_component1
+    cold_white_color_temperature: 6500 K
+    warm_white_color_temperature: 2700 K
+    gamma_correct: 1
+    constant_brightness: False
+    on_turn_on: 
+      then:
+        - light.turn_off: rgb_partition
+  - platform: beken_spi_led_strip
+    id: rgbic_cctic_ledstrip
+    pin: 16
+    num_leds: 50
+    chipset: SM16703
+    name: "Ledstrip"
+    rgb_order: BRG
+    internal: true
+  - platform: partition
+    id: rgb_partition
+    default_transition_length: 0.5s
+    name: "RGB LEDs"
+    power_supply: powersupply
+    segments:
+      - id: rgbic_cctic_ledstrip
+        from: 0
+        to: 0
+      - id: rgbic_cctic_ledstrip
+        from: 2
+        to: 2
+      - id: rgbic_cctic_ledstrip
+        from: 4
+        to: 4
+      - id: rgbic_cctic_ledstrip
+        from: 6
+        to: 6
+      - id: rgbic_cctic_ledstrip
+        from: 8
+        to: 8
+      - id: rgbic_cctic_ledstrip
+        from: 10
+        to: 10
+      - id: rgbic_cctic_ledstrip
+        from: 12
+        to: 12
+      - id: rgbic_cctic_ledstrip
+        from: 14
+        to: 14
+      - id: rgbic_cctic_ledstrip
+        from: 16
+        to: 16
+      - id: rgbic_cctic_ledstrip
+        from: 18
+        to: 18
+      - id: rgbic_cctic_ledstrip
+        from: 20
+        to: 20
+      - id: rgbic_cctic_ledstrip
+        from: 22
+        to: 22
+      - id: rgbic_cctic_ledstrip
+        from: 24
+        to: 24
+      - id: rgbic_cctic_ledstrip
+        from: 26
+        to: 26
+      - id: rgbic_cctic_ledstrip
+        from: 28
+        to: 28
+      - id: rgbic_cctic_ledstrip
+        from: 30
+        to: 30
+      - id: rgbic_cctic_ledstrip
+        from: 32
+        to: 32
+      - id: rgbic_cctic_ledstrip
+        from: 34
+        to: 34
+      - id: rgbic_cctic_ledstrip
+        from: 36
+        to: 36
+      - id: rgbic_cctic_ledstrip
+        from: 38
+        to: 38
+      - id: rgbic_cctic_ledstrip
+        from: 40
+        to: 40
+      - id: rgbic_cctic_ledstrip
+        from: 42
+        to: 42
+      - id: rgbic_cctic_ledstrip
+        from: 44
+        to: 44
+      - id: rgbic_cctic_ledstrip
+        from: 46
+        to: 46
+      - id: rgbic_cctic_ledstrip
+        from: 48
+        to: 48
+    effects:
+     - random:
+     - pulse:
+     - strobe:
+     - flicker:
+     - addressable_rainbow:
+     - addressable_color_wipe:
+     - addressable_scan:
+     - addressable_twinkle:
+     - addressable_random_twinkle:
+     - addressable_fireworks:
+     - addressable_lambda:
+         name: "Stair Motion Glow"
+         update_interval: 300ms
+         lambda: |-
+          int step = id(current_step);  // Get the current step
+          int total_steps = id(num_steps).state;  // Get the total number of steps (use .state to access the value)
+
+          if (step < 0 || step >= total_steps) {
+            for (int i = 0; i < it.size(); i++) {
+              it[i] = Color(0, 0, 0);  // Turn off all LEDs if step is out of range
+            }
+            return;
+          }
+
+          // Define brightness factor
+          float brightness_factor = 1.0;  // Adjust this as needed for dimming effects
+
+          for (int i = 0; i < it.size(); i++) {
+            float dist = abs(i - step);  // Calculate distance from the current step
+            float brightness = 0.0;
+
+            // Set brightness based on the distance from the current step
+            if (dist < 1.0) {
+              brightness = 1.0;  // Full brightness for the main step
+            } else if (dist < 2.0) {
+              brightness = 0.6;  // Dimmed brightness for nearby steps
+            } else if (dist < 3.0) {
+              brightness = 0.3;  // Even dimmer for farther steps
+            }
+
+            // Define the color (for testing, set it to white)
+            auto color = Color(255, 255, 255);  // White color
+
+            // Adjust the color brightness by modifying RGB values
+            it[i] = Color(
+              color.red * brightness * brightness_factor,
+              color.green * brightness * brightness_factor,
+              color.blue * brightness * brightness_factor
+            );
+
+            // Debug log for each LED
+            ESP_LOGI("stair_effect", "LED %d, Color: R:%d G:%d B:%d, Brightness: %.2f", i,
+                     it[i].get_red(), it[i].get_green(), it[i].get_blue(), brightness);
+            }
+
+
+    on_turn_on: 
+      then:
+        - light.turn_off: cw_ww
+  - platform: partition
+    id: cw_ww_partition
+    internal: True
+    name: "CW/WW LEDs"
+    default_transition_length: 0.5s
+    segments:
+      - id: rgbic_cctic_ledstrip
+        from: 1
+        to: 1
+      - id: rgbic_cctic_ledstrip
+        from: 3
+        to: 3
+      - id: rgbic_cctic_ledstrip
+        from: 5
+        to: 5
+      - id: rgbic_cctic_ledstrip
+        from: 7
+        to: 7
+      - id: rgbic_cctic_ledstrip
+        from: 9
+        to: 9
+      - id: rgbic_cctic_ledstrip
+        from: 11
+        to: 11
+      - id: rgbic_cctic_ledstrip
+        from: 13
+        to: 13
+      - id: rgbic_cctic_ledstrip
+        from: 15
+        to: 15
+      - id: rgbic_cctic_ledstrip
+        from: 17
+        to: 17
+      - id: rgbic_cctic_ledstrip
+        from: 19
+        to: 19
+      - id: rgbic_cctic_ledstrip
+        from: 21
+        to: 21
+      - id: rgbic_cctic_ledstrip
+        from: 23
+        to: 23
+      - id: rgbic_cctic_ledstrip
+        from: 25
+        to: 25
+      - id: rgbic_cctic_ledstrip
+        from: 27
+        to: 27
+      - id: rgbic_cctic_ledstrip
+        from: 29
+        to: 29
+      - id: rgbic_cctic_ledstrip
+        from: 31
+        to: 31
+      - id: rgbic_cctic_ledstrip
+        from: 33
+        to: 33
+      - id: rgbic_cctic_ledstrip
+        from: 35
+        to: 35
+      - id: rgbic_cctic_ledstrip
+        from: 37
+        to: 37
+      - id: rgbic_cctic_ledstrip
+        from: 39
+        to: 39
+      - id: rgbic_cctic_ledstrip
+        from: 41
+        to: 41
+      - id: rgbic_cctic_ledstrip
+        from: 43
+        to: 43
+      - id: rgbic_cctic_ledstrip
+        from: 45
+        to: 45
+      - id: rgbic_cctic_ledstrip
+        from: 47
+        to: 47
+      - id: rgbic_cctic_ledstrip
+        from: 49
+        to: 49
+remote_receiver:
+  pin:
+    number: P26
+    inverted: true
+  dump: nec
+
+script:
+  # Timer scripts to turn off RGB and White after specific durations
+  - id: timer_1h
+    mode: single
+    then:
+      - delay: 1h
+      - light.turn_off:
+          id: rgb_partition
+      - light.turn_off:
+          id: cw_ww_partition
+  - id: timer_2h
+    mode: single
+    then:
+      - delay: 2h
+      - light.turn_off:
+          id: rgb_partition
+      - light.turn_off:
+          id: cw_ww_partition
+  - id: timer_3h
+    mode: single
+    then:
+      - delay: 3h
+      - light.turn_off:
+          id: rgb_partition
+      - light.turn_off:
+          id: cw_ww_partition
+binary_sensor:
+  # Pushbutton 1
+  - platform: gpio
+    pin:
+      number: P9
+      mode: INPUT_PULLUP
+    name: "Button 3"
+    internal: true
+  # Pushbutton 2
+  - platform: gpio
+    pin:
+      number: P24
+      mode: INPUT_PULLUP
+    name: "Button 4"
+    internal: true
+  # Pushbutton 3
+  - platform: gpio
+    pin:
+      number: P28
+      mode: INPUT_PULLUP
+    name: "Button 50"
+    internal: true
+  # Button 1: Brightness RGB Up
+  - platform: remote_receiver
+    name: "Brightness RGB Up"
+    internal: true
+    nec:
+      address: 0xEF00
+      command: 0xE31C
+    on_press:
+      - if:
+          condition:
+            - light.is_on: cw_ww
+          then: 
+            - light.dim_relative:
+                id: cw_ww
+                relative_brightness: 10%
+          else:
+            - light.dim_relative:
+                id: rgb_partition
+                relative_brightness: 0%
+  # Button 2: Brightness RGB Down
+  - platform: remote_receiver
+    name: "Brightness RGB Down"
+    internal: true
+    nec:
+      address: 0xEF00
+      command: 0xE21D
+    on_press:
+      - if:
+          condition:
+            - light.is_on: cw_ww
+          then: 
+            - light.dim_relative:
+                id: cw_ww
+                relative_brightness: -10%
+          else:
+            - light.dim_relative:
+                id: rgb_partition
+                relative_brightness: -10%
+  # Button 3: OFF
+  - platform: remote_receiver
+    name: "Button OFF"
+    internal: true
+    nec:
+      address: 0xEF00
+      command: 0xE11E
+    on_press:
+      - light.turn_off:
+          id: rgb_partition
+      - light.turn_off:
+          id: cw_ww_partition
+  # Button 4: ON
+  - platform: remote_receiver
+    name: "Button ON"
+    internal: true
+    nec:
+      address: 0xEF00
+      command: 0xE01F
+    on_press:
+      - light.turn_on:
+          id: rgb_partition
+  # Button 5: RGB Red
+  - platform: remote_receiver
+    name: "RGB Red"
+    internal: true
+    nec:
+      address: 0xEF00
+      command: 0xFF00
+    on_press:
+      - light.turn_on:
+          id: rgb_partition
+          red: 1.0
+          green: 0.0
+          blue: 0.0
+  # Button 6: RGB Green
+  - platform: remote_receiver
+    name: "RGB Green"
+    internal: true
+    nec:
+      address: 0xEF00
+      command: 0xFE01
+    on_press:
+      - light.turn_on:
+          id: rgb_partition
+          red: 0.0
+          green: 1.0
+          blue: 0.0
+  # Button 7: RGB Blue
+  - platform: remote_receiver
+    name: "RGB Blue"
+    internal: true
+    nec:
+      address: 0xEF00
+      command: 0xFD02
+    on_press:
+      - light.turn_on:
+          id: rgb_partition
+          red: 0.0
+          green: 0.0
+          blue: 1.0
+  # Button 8: Timer 1H
+  - platform: remote_receiver
+    name: "Timer 1H"
+    internal: true
+    nec:
+      address: 0xEF00
+      command: 0xFC03
+    on_press:
+      - script.execute: timer_1h
+  # Button 9: Orange
+  - platform: remote_receiver
+    name: "Oranje"
+    internal: true
+    nec:
+      address: 0xEF00
+      command: 0xFB04
+    on_press:
+      - light.turn_on:
+          id: rgb_partition
+          red: 1.0
+          green: 0.5
+          blue: 0.0
+  # Button 10: Light Green
+  - platform: remote_receiver
+    name: "Lichtgroen"
+    internal: true
+    nec:
+      address: 0xEF00
+      command: 0xFA05
+    on_press:
+      - light.turn_on:
+          id: rgb_partition
+          red: 0.5
+          green: 1.0
+          blue: 0.0
+  # Button 11: Light Blue
+  - platform: remote_receiver
+    name: "Lichtblauw"
+    internal: true
+    nec:
+      address: 0xEF00
+      command: 0xF906
+    on_press:
+      - light.turn_on:
+          id: rgb_partition
+          red: 0.0
+          green: 1.0
+          blue: 1.0
+  # Button 12: Timer 2H
+  - platform: remote_receiver
+    name: "Timer 2H"
+    internal: true
+    nec:
+      address: 0xEF00
+      command: 0xF807
+    on_press:
+      - script.execute: timer_2h
+  # Button 13: Yellow
+  - platform: remote_receiver
+    name: "Geel"
+    internal: true
+    nec:
+      address: 0xEF00
+      command: 0xF708
+    on_press:
+      - light.turn_on:
+          id: rgb_partition
+          red: 1.0
+          green: 1.0
+          blue: 0.0
+  # Button 14: Dark Green
+  - platform: remote_receiver
+    name: "Donkergroen"
+    internal: true
+    nec:
+      address: 0xEF00
+      command: 0xF609
+    on_press:
+      - light.turn_on:
+          id: rgb_partition
+          red: 0.0
+          green: 0.5
+          blue: 0.0
+  # Button 15: Purple
+  - platform: remote_receiver
+    name: "Paars"
+    internal: true
+    nec:
+      address: 0xEF00
+      command: 0xF50A
+    on_press:
+      - light.turn_on:
+          id: rgb_partition
+          red: 0.5
+          green: 0.0
+          blue: 0.5
+  # Button 16: Timer 3H
+  - platform: remote_receiver
+    name: "Timer 3H"
+    internal: true
+    nec:
+      address: 0xEF00
+      command: 0xF40B
+    on_press:
+      - script.execute: timer_3h
+  # Button 17: WW (Warm White)
+  - platform: remote_receiver
+    name: "WW (Warm Wit)"
+    internal: true
+    nec:
+      address: 0xEF00
+      command: 0xF30C
+    on_press:
+      - light.turn_on:
+          id: cw_ww
+          warm_white : 1.0
+          cold_white: 0.0
+  # Button 19: CW (Neutral White)
+  - platform: remote_receiver
+    name: "NW (Neutral White)"
+    internal: true
+    nec:
+      address: 0xEF00
+      command: 0xF20D
+    on_press:
+      - light.turn_on:
+          id: cw_ww
+          warm_white : 1.0
+          cold_white: 1.0
+  # Button 19: CW (Cool White)
+  - platform: remote_receiver
+    name: "CW (Cool White)"
+    internal: true
+    nec:
+      address: 0xEF00
+      command: 0xF10E
+    on_press:
+      - light.turn_on:
+          id: cw_ww
+          warm_white : 0.0
+          cold_white: 1.0
+  # Button 20: Colortemperature up
+  - platform: remote_receiver
+    name: "Colortemperature Up"
+    internal: true
+    nec:
+      address: 0xEF00
+      command: 0xF00F
+    on_press:
+      - light.turn_on:
+          id: cw_ww
+          color_temperature: !lambda |-
+            float current_temp = id(cw_ww).current_values.get_color_temperature();
+            // Verhoog (koelere lichtkleur) door mireds met 10% te verlagen
+            float new_temp = current_temp * 1.1;
+            // Bewaak de grenzen
+            if(new_temp < 153) new_temp = 153;   // ~6500K
+            if(new_temp > 370) new_temp = 370;   // ~2700K
+            return new_temp;
+  # Button 21: Effect Speed+
+  - platform: remote_receiver
+    name: "Effect Speed+"
+    internal: true
+    nec:
+      address: 0xEF00
+      command: 0xEF10
+    on_press:
+      - lambda: |-
+          id(active_effect) += 1;
+          if (id(active_effect) > 7) id(active_effect) = 1;  // Restart at the first effect
+          auto call = id(rgb_partition).turn_on();
+          switch (id(active_effect)) {
+            case 1:
+              call.set_effect("Rainbow");
+              break;
+            case 2:
+              call.set_effect("Color Wipe");
+              break;
+            case 3:
+              call.set_effect("Scan");
+              break;
+            case 4:
+              call.set_effect("Twinkle");
+              break;
+            case 5:
+              call.set_effect("Random Twinkle");
+              break;
+            case 6:
+              call.set_effect("Fireworks");
+              break;
+            case 7:
+              call.set_effect("Stair Motion Glow");
+              break;
+          }
+          call.perform();
+  # Button 22: Mode Stop Effect
+  - platform: remote_receiver
+    name: "Next Effect"
+    internal: true
+    nec:
+      address: 0xEF00
+      command: 0xEE11
+    on_press:
+      - lambda: |-
+          id(active_effect) = 0;  // Set active effect to none
+          auto call = id(rgb_partition).turn_on();
+          call.set_effect("None");  // Stop effects
+          call.perform();
+  # Button 23: Effect Speed-
+  - platform: remote_receiver
+    name: "Effect Speed-"
+    internal: true
+    nec:
+      address: 0xEF00
+      command: 0xED12
+    on_press:
+      - lambda: |-
+          id(active_effect) -= 1;
+          if (id(active_effect) < 1) id(active_effect) = 7;  // Go to the last effect
+          auto call = id(rgb_partition).turn_on();
+          switch (id(active_effect)) {
+            case 1:
+              call.set_effect("Rainbow");
+              break;
+            case 2:
+              call.set_effect("Color Wipe");
+              break;
+            case 3:
+              call.set_effect("Scan");
+              break;
+            case 4:
+              call.set_effect("Twinkle");
+              break;
+            case 5:
+              call.set_effect("Random Twinkle");
+              break;
+            case 6:
+              call.set_effect("Fireworks");
+              break;
+            case 7:
+              call.set_effect("Stair Motion Glow");
+              break;
+          }
+          call.perform();
+  # Button 24: Colortemperature Down
+  - platform: remote_receiver
+    name: "Colortemperature Down"
+    internal: true
+    nec:
+      address: 0xEF00
+      command: 0xEC13
+    on_press:
+      - light.turn_on:
+          id: cw_ww
+          color_temperature: !lambda |-
+            float current_temp = id(cw_ww).current_values.get_color_temperature();
+            // Verhoog (koelere lichtkleur) door mireds met 10% te verlagen
+            float new_temp = current_temp * 0.9;
+            // Bewaak de grenzen
+            if(new_temp < 153) new_temp = 153;   // ~6500K
+            if(new_temp > 370) new_temp = 370;   // ~2700K
+            return new_temp;
+  # Button 25: Stair Motion Glow
+  - platform: remote_receiver
+    name: "Stair Motion Glow"
+    internal: true
+    nec:
+      address: 0xEF00
+      command: 0xEB14
+    on_press:
+      then:
+        - light.turn_on:
+            id: rgb_partition
+            effect: "Stair Motion Glow"
