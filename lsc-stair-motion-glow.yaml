@@ -9,6 +9,10 @@ bk72xx:
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Stair"
+    password: "uzzPzj23jLFS"
 
 api:
   encryption:
@@ -17,10 +21,10 @@ ota:
   - platform: esphome
     password: ""
 
-# Enable logging
+    # Enable logging
 logger:
-  logs:
-    sensor: INFO 
+  level: WARN  # Set to DEBUG to capture detailed logs
+
 
 # Global variables
 globals:
@@ -72,6 +76,18 @@ sensor:
             int step = x;  // Get the current step from the Home Assistant sensor value
             id(current_step) = step;  // Set the current_step variable in ESPHome
             ESP_LOGI("stair_effect", "Updated current step from HA: %d", step);  // Debug log
+
+interval:
+  - interval: 1s
+    then:
+      - lambda: |-
+          static bool started = false;
+          if (!started) {
+            started = true;
+            auto call = id(rgb_partition).turn_on();
+            call.set_effect("Startup Cycle");
+            call.perform();
+          }
 
 
 output:
@@ -215,7 +231,7 @@ light:
      - addressable_fireworks:
      - addressable_lambda:
          name: "Stair Motion Glow"
-         update_interval: 300ms
+         update_interval: 500ms
          lambda: |-
           int step = id(current_step);  // Get the current step
           int total_steps = id(num_steps).state;  // Get the total number of steps (use .state to access the value)
@@ -254,9 +270,112 @@ light:
             );
 
             // Debug log for each LED
-            ESP_LOGI("stair_effect", "LED %d, Color: R:%d G:%d B:%d, Brightness: %.2f", i,
+            ESP_LOGD("stair_effect", "LED %d, Color: R:%d G:%d B:%d, Brightness: %.2f", i,
                      it[i].get_red(), it[i].get_green(), it[i].get_blue(), brightness);
             }
+     - addressable_lambda:
+         name: "Stair Motion Glow Alert"
+         update_interval: 100ms
+         lambda: |-
+         
+          static int head1 = 0;  // Head for trail 1
+          static int head2 = 10; // Head for trail 2 (starts later)
+          static int head3 = 20; // Head for trail 3 (starts later)
+          static int delay_step = 0;  // Delay step for each trail's progress
+
+          int size = it.size();  // Get the number of LEDs
+          int trail_length = 5;  // Length of each trail (5 LEDs lit)
+          int space_between_trails = 12;  // Space between the trails (50 unlit LEDs)
+
+          // Move the heads forward
+          head1 += 1;
+          if (head1 >= size) head1 = 0;  // Wrap around
+
+          head2 += 1;
+          if (head2 >= size) head2 = 0;  // Wrap around
+
+          head3 += 1;
+          if (head3 >= size) head3 = 0;  // Wrap around
+
+          // Set all LEDs to dimmed warm white as the background
+          for (int i = 0; i < size; i++) {
+            it[i] = Color(128, 0, 0);  // Dimmed warm white (low red, green, and blue)
+          }
+
+          // Create 3 simultaneous trails
+          // Trail 1
+          for (int i = 0; i < trail_length; i++) {
+            int pos = (head1 + i) % size;  // Trail 1's LED positions
+            it[pos] = Color(0, 255, 0);  // Green color
+          }
+
+          // Trail 2 (delayed)
+          for (int i = 0; i < trail_length; i++) {
+            int pos = (head2 + i) % size;  // Trail 2's LED positions
+            it[pos] = Color(0, 255, 0);  // Green color
+          }
+
+          // Trail 3 (delayed)
+          for (int i = 0; i < trail_length; i++) {
+            int pos = (head3 + i) % size;  // Trail 3's LED positions
+            it[pos] = Color(0, 255, 0);  // Green color
+          }
+
+          // Create spaces between the trails (50 unlit LEDs)
+          for (int i = 0; i < size; i++) {
+            if (i % space_between_trails == 0) {
+              // Unlit LEDs after every stair step --in my case 5  LEDs 
+              it[i] = Color(0, 0, 0);  // Turn off these LEDs
+            }
+          }
+
+
+     - addressable_lambda:
+        name: "Startup Cycle"
+        update_interval: 100ms
+        lambda: |-
+          static int head = 0;
+          static int direction = 1;
+          static bool transitioned = false;
+          const int size = it.size();
+
+          if (transitioned) return;
+
+          head += direction;
+
+          if (head >= size) {
+            head = size - 1;
+            direction = -1;  // Go down
+          } else if (head < 0) {
+            head = 0;
+            direction = 0;
+
+            // Now switch to the regular effect
+            auto call = id(rgb_partition).turn_on();
+            call.set_effect("Stair Motion Glow");
+            call.perform();
+            id(active_effect) = 7;
+            transitioned = true;
+            return;
+          }
+
+          for (int i = 0; i < size; i++) {
+            it[i] = Color(0, 0, 0);
+          }
+
+          for (int i = 0; i < 5; i++) {
+            int pos = head - i * direction;
+            if (pos >= 0 && pos < size) {
+              float brightness = 1.0 - (i * 0.2);
+              auto color = Color(0, 255, 0);  // Green
+              it[pos] = Color(
+                color.red * brightness,
+                color.green * brightness,
+                color.blue * brightness
+              );
+            }
+          }
+
 
 
     on_turn_on: 
@@ -769,4 +888,4 @@ binary_sensor:
       then:
         - light.turn_on:
             id: rgb_partition
-            effect: "Stair Motion Glow"
+            effect: "Stair Motion Glow Alert"
