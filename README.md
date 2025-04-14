@@ -12,7 +12,10 @@ Done.
 
 ## 💡 What This Does
 
-- Lights up stairs dynamically based on your position
+- Lights up stairs dynamically based on your position. Sensor needed.
+- Alert animation , e.g say a presence device detects motion on first floor then the animation will go up. Or if you are too late for something change the direction to down. Endless ideas. No motion sensor needed for this. 
+- Startup animation. No sensor needed.
+ 
 - Home Asistant integration
 - Works with various motion or distance sensors (Bluetooth, Z-Wave, Zigbee, etc.) And you can even make your own if you prefer. 
 - Using an LSC RGBIC+CCTIC Ledstrip with ESPHome (But you can make your own strip if you prefer) 
