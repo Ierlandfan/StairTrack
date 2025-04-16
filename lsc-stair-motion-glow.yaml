@@ -10,27 +10,34 @@ wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
   # Enable fallback hotspot (captive portal) in case wifi connection fails
+  on_connect:
+    - logger.log: "WiFi connected"
+    - switch.turn_on: wifi_connected_switch
+
+  on_disconnect:
+    - logger.log: "WiFi disconnected"
+    - switch.turn_off: wifi_connected_switch
   ap:
     ssid: "Stair"
     password: "uzzPzj23jLFS"
 
 api:
   encryption:
-    key: ""
+    key: "insert-key-here"
 ota:
   - platform: esphome
-    password: ""
+    password: "insert-key-here1"
 
     # Enable logging
 logger:
-  level: WARN  # Set to DEBUG to capture detailed logs
+  level: INFO 
 
 
 # Global variables
 globals:
   - id: active_effect
     type: int
-    restore_value: yes
+    restore_value: no
     initial_value: '0'
   - id: current_step
     type: int
@@ -40,10 +47,30 @@ globals:
     initial_value: '0.0'
   - id: motion_direction
     type: int
-    initial_value: '1'  # 1 = up, -1 = down
+    initial_value: '1' 
   - id: idle_counter
     type: int
     initial_value: '0'
+  - id: startup_status
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: startup_ran
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: fading
+    type: bool
+    initial_value: 'false'
+  - id: brightness_var
+    type: float
+    restore_value: no
+    initial_value: '1.0'
+
+interval:
+  - interval: 1s
+    then:
+      - script.execute: startup_animation
 
 # Constants
 number:
@@ -73,22 +100,17 @@ sensor:
     on_value:
       then:
         - lambda: |-
-            int step = x;  // Get the current step from the Home Assistant sensor value
-            id(current_step) = step;  // Set the current_step variable in ESPHome
-            ESP_LOGI("stair_effect", "Updated current step from HA: %d", step);  // Debug log
-
-interval:
-  - interval: 1s
-    then:
-      - lambda: |-
-          static bool started = false;
-          if (!started) {
-            started = true;
-            auto call = id(rgb_partition).turn_on();
-            call.set_effect("Startup Cycle");
-            call.perform();
-          }
-
+            if (!std::isnan(x)) {
+              int step = static_cast<int>(x);
+              id(current_step) = step;
+              ESP_LOGI("stair_effect", "Updated current step from HA: %d", step);
+            } else {
+              id(current_step) = 1; 
+              ESP_LOGW("stair_effect", "Received NaN from sensor.stair_step – ");
+            }
+time:
+  - platform: homeassistant
+    id: esphome_time
 
 output:
   - platform: template
@@ -233,51 +255,37 @@ light:
          name: "Stair Motion Glow"
          update_interval: 500ms
          lambda: |-
-          int step = id(current_step);  // Get the current step
-          int total_steps = id(num_steps).state;  // Get the total number of steps (use .state to access the value)
-
+          static unsigned long last_motion_time = 0;
+          float brightness_factor = id(brightness_var);
+          int step = id(current_step);
+          int total_steps = id(num_steps).state;
           if (step < 0 || step >= total_steps) {
             for (int i = 0; i < it.size(); i++) {
-              it[i] = Color(0, 0, 0);  // Turn off all LEDs if step is out of range
+              it[i] = Color(0, 0, 0);
             }
             return;
           }
 
-          // Define brightness factor
-          float brightness_factor = 1.0;  // Adjust this as needed for dimming effects
-
           for (int i = 0; i < it.size(); i++) {
-            float dist = abs(i - step);  // Calculate distance from the current step
+            float dist = abs(i - step);
             float brightness = 0.0;
+            if (dist < 1.0) brightness = 1.0;
+            else if (dist < 2.0) brightness = 0.6;
+            else if (dist < 3.0) brightness = 0.3;
 
-            // Set brightness based on the distance from the current step
-            if (dist < 1.0) {
-              brightness = 1.0;  // Full brightness for the main step
-            } else if (dist < 2.0) {
-              brightness = 0.6;  // Dimmed brightness for nearby steps
-            } else if (dist < 3.0) {
-              brightness = 0.3;  // Even dimmer for farther steps
-            }
-
-            // Define the color (for testing, set it to white)
-            auto color = Color(255, 255, 255);  // White color
-
-            // Adjust the color brightness by modifying RGB values
+            auto color = Color(255, 255, 255);
             it[i] = Color(
               color.red * brightness * brightness_factor,
               color.green * brightness * brightness_factor,
               color.blue * brightness * brightness_factor
             );
+          }
 
-            // Debug log for each LED
-            ESP_LOGD("stair_effect", "LED %d, Color: R:%d G:%d B:%d, Brightness: %.2f", i,
-                     it[i].get_red(), it[i].get_green(), it[i].get_blue(), brightness);
-            }
      - addressable_lambda:
          name: "Stair Motion Glow Alert"
          update_interval: 100ms
          lambda: |-
-         
+          
           static int head1 = 0;  // Head for trail 1
           static int head2 = 10; // Head for trail 2 (starts later)
           static int head3 = 20; // Head for trail 3 (starts later)
@@ -328,59 +336,141 @@ light:
               it[i] = Color(0, 0, 0);  // Turn off these LEDs
             }
           }
-
-
      - addressable_lambda:
-        name: "Startup Cycle"
-        update_interval: 100ms
-        lambda: |-
-          static int head = 0;
-          static int direction = 1;
-          static bool transitioned = false;
-          const int size = it.size();
+         name: "Startup sequence animation"
+         update_interval: 80ms
+         lambda: |-
+            
+            static Color green = Color(0, 255, 0);
+            static Color red = Color(255, 0, 0);
+            static Color yellow = Color(255, 255, 0);
+            static Color black = Color(0, 0, 0);
 
-          if (transitioned) return;
+            static bool transitioned = false;
+            static int step = 0;
+            static unsigned long last_step_time = 0;
+            static unsigned long transition_start_time = 0;
+            static bool transition_timer_started = false;
+            static unsigned long startup_time = 0;
 
-          head += direction;
+            unsigned long now = esphome::millis(); 
+            const int delay_between_steps = 2000;
+            const int size = it.size();
 
-          if (head >= size) {
-            head = size - 1;
-            direction = -1;  // Go down
-          } else if (head < 0) {
-            head = 0;
-            direction = 0;
-
-            // Now switch to the regular effect
-            auto call = id(rgb_partition).turn_on();
-            call.set_effect("Stair Motion Glow");
-            call.perform();
-            id(active_effect) = 7;
-            transitioned = true;
-            return;
-          }
-
-          for (int i = 0; i < size; i++) {
-            it[i] = Color(0, 0, 0);
-          }
-
-          for (int i = 0; i < 5; i++) {
-            int pos = head - i * direction;
-            if (pos >= 0 && pos < size) {
-              float brightness = 1.0 - (i * 0.2);
-              auto color = Color(0, 255, 0);  // Green
-              it[pos] = Color(
-                color.red * brightness,
-                color.green * brightness,
-                color.blue * brightness
-              );
+            if (startup_time == 0) {
+              startup_time = now;
+              ESP_LOGI("startup", "Startup initialized");
             }
-          }
 
+            // Check and update each step
+            if (!transitioned && now - last_step_time > delay_between_steps) {
+              last_step_time = now;
+              ESP_LOGI("startup", "Running step %d", step);
 
+              switch (step) {
+                case 0:
+                  ESP_LOGI("startup", "Step 1 - Booting");
+                  it[0] = green;
+                  break;
+
+                case 1: {
+                  bool wifi_ok = id(wifi_connected_switch).state;
+                  ESP_LOGI("startup", "Step 2 - WiFi: %s", wifi_ok ? "CONNECTED" : "DISCONNECTED");
+                  it[1] = wifi_ok ? green : red;
+                  break;
+                }
+
+                case 2: {
+                  // LD2411 check (optional if .has_state() available)
+                  if (id(ld2411_connected).has_state()) {
+                    bool ld_ok = id(ld2411_connected).state;
+                    it[2] = ld_ok ? green : red;
+                    ESP_LOGI("startup", "Step 3 - LD2411: %s", ld_ok ? "CONNECTED" : "DISCONNECTED");
+                  } else {
+                    it[2] = yellow;
+                    ESP_LOGI("startup", "Step 3 - LD2411: not ready");
+                  }
+                  break;
+                }
+
+                case 3: {
+                  // HA API state (non-blocking)
+                  if (id(ha_status).has_state()) {
+                    bool ha_ok = id(ha_status).state;
+                    it[3] = ha_ok ? green : red;
+                    ESP_LOGI("startup", "Step 4 - HA: %s", ha_ok ? "ONLINE" : "OFFLINE");
+                 } else {
+                   it[3] = yellow;
+                   ESP_LOGI("startup", "Step 4 - HA: not ready");
+                  }
+                  break;
+                }
+              }
+
+              step++;
+
+              if (step > 3) {
+                if (!transition_timer_started) {
+                  transition_start_time = now;
+                  transition_timer_started = true;
+                  ESP_LOGI("startup", "Startup complete. Transitioning soon...");
+                  return;
+                }
+
+                if (now - transition_start_time >= 2000) {
+                  transitioned = true;
+                  step = 0;  // reset for reuse if needed
+                  ESP_LOGI("startup", "Transitioning to final animation...");
+                }
+              }
+            }
+
+            // Final animation
+            if (transitioned) {
+              static int head = 0;
+              static int direction = 1;
+
+              head += direction;
+
+              if (head >= size) {
+                head = size - 1;
+                direction = -1;
+              } else if (head < 0) {
+                head = 0;
+                direction = 0;
+
+                ESP_LOGI("startup", "Final animation complete, switching effect...");
+                auto call = id(rgb_partition).turn_on();
+                call.set_effect("Stair Motion Glow");
+                call.perform();
+                id(active_effect) = 7;
+                return;
+              }
+
+              // Only clear trail
+              const int trail_len = 5;
+              for (int i = head - (trail_len - 1) * direction; i != head + direction; i += direction) {
+                if (i >= 0 && i < size) it[i] = black;
+              }
+
+              for (int i = 0; i < trail_len; i++) {
+                int pos = head - i * direction;
+                if (pos >= 0 && pos < size) {
+                  float brightness = 1.0 - (i * 0.2);
+                  it[pos] = Color(
+                    green.red * brightness,
+                    green.green * brightness,
+                    green.blue * brightness
+                  );
+                }
+              }
+            }
 
     on_turn_on: 
       then:
         - light.turn_off: cw_ww
+
+
   - platform: partition
     id: cw_ww_partition
     internal: True
@@ -494,7 +584,86 @@ script:
           id: rgb_partition
       - light.turn_off:
           id: cw_ww_partition
+
+  - id: startup_animation
+    then:
+      - if:
+          condition:
+            lambda: 'return !id(startup_ran);'
+          then:
+            - lambda: |-
+                auto call = id(rgb_partition).turn_on();
+                call.set_effect("Startup Sequence animation");
+                call.perform();
+            - lambda: 'id(startup_ran) = true;'
+
+switch:
+  - platform: template
+    name: "WiFi Connected Switch"
+    id: wifi_connected_switch
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+
 binary_sensor:
+
+  - platform: status
+    name: "ESP Status"
+    id: esp_status
+
+  - platform: homeassistant
+    name: "HA Status"
+    id: ha_status
+    entity_id: binary_sensor.home_assistant_online
+
+
+  - platform: homeassistant
+    name: "Motion Sensor status"
+    id: ld2411_connected
+    entity_id: binary_sensor.ld2411_connected
+    internal: True
+
+  - platform: template
+    name: "WiFi Connection Status"
+    id: wifi_status_sensor
+    lambda: |-
+      return id(wifi_connected_switch).state;
+
+  - platform: homeassistant
+    name: "Auto-Off Trigger"
+    id: auto_off_trigger
+    entity_id: binary_sensor.stair_motion_timeout
+    on_press:
+      then:
+        - logger.log:
+            format: "🕒 Auto-Off Triggered: Motion timeout detected at %s"
+            args: ['id(esphome_time).now().strftime("%H:%M:%S").c_str()']
+            level: INFO
+        - repeat:
+            count: 100
+            then:
+              - lambda: |-
+                  // Exponential fade out
+                  float progress = float(id(brightness_var)); // Get current brightness level (0-1)
+                  float easing_factor = exp(-progress * 5.0);  // Exponential decay function (adjust the 5.0 to change fade speed)
+                  id(brightness_var) = easing_factor;
+              - delay: 15ms
+        - lambda: |-
+            id(brightness_var) = 1.0;
+            auto call = id(rgb_partition).turn_off();
+            call.perform();
+
+  - platform: homeassistant
+    name: "Auto-On Trigger"
+    id: auto_on_trigger
+    entity_id: binary_sensor.stair_motion_detected
+    on_press:
+      then:
+        - logger.log: "Motion detected - turning on full brightness"
+        - lambda: |-
+            id(brightness_var) = 1.0;
+            auto call = id(rgb_partition).turn_on();
+            call.perform();  
+
   # Pushbutton 1
   - platform: gpio
     pin:
@@ -797,13 +966,13 @@ binary_sensor:
               call.set_effect("Scan");
               break;
             case 4:
-              call.set_effect("Twinkle");
+              call.set_effect("fireworks");
               break;
             case 5:
-              call.set_effect("Random Twinkle");
+              call.set_effect("Startup sequence animation");
               break;
             case 6:
-              call.set_effect("Fireworks");
+              call.set_effect("Stair Motion Glow Alert");
               break;
             case 7:
               call.set_effect("Stair Motion Glow");
@@ -846,13 +1015,13 @@ binary_sensor:
               call.set_effect("Scan");
               break;
             case 4:
-              call.set_effect("Twinkle");
+              call.set_effect("fireworks");
               break;
             case 5:
-              call.set_effect("Random Twinkle");
+              call.set_effect("Startup sequence animation");
               break;
             case 6:
-              call.set_effect("Fireworks");
+              call.set_effect("Stair Motion Glow Alert");
               break;
             case 7:
               call.set_effect("Stair Motion Glow");
