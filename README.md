@@ -15,7 +15,15 @@ Done.
 - Lights up stairs dynamically based on your position. Sensor needed.
 - Alert animation , e.g say a presence device detects motion on first floor then the animation will go up. Or if you are too late for something change the direction to down. Endless ideas. No motion sensor needed for this. 
 - Startup animation. No sensor needed.
- 
+
+  Step 1 lights Green (Booting)
+  Step 2 lights red or green on WIFI state
+  Step 3 and 4 are checking HA state and LD2410 state in HA (If not present simply stays red)
+  Then the trailing light Up and down (Once) to clear the previous 
+  step and jumps to the default Glow Motion Stairs effect.
+
+- added auto-fade out after 10 seconds of no motion (HA logic)
+
 - Home Asistant integration
 - Works with various motion or distance sensors (Bluetooth, Z-Wave, Zigbee, etc.) And you can even make your own if you prefer. 
 - Using an LSC RGBIC+CCTIC Ledstrip with ESPHome (But you can make your own strip if you prefer) 
